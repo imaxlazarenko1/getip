@@ -11,6 +11,12 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1, x_host=1)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+from flask import send_from_directory
+
+@app.route("/knock.wav")
+def laugh_file():
+    return send_from_directory(".", "knock.wav")
+
 
 def get_client_ip():
     xff = request.headers.get("X-Forwarded-For")
