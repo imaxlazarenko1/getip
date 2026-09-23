@@ -10,13 +10,15 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+
 def get_client_ip():
     return request.remote_addr or "unknown"
 
+
 def get_db():
-    # Render отдаёт DATABASE_URL в формате postgres://, psycopg2 хочет postgresql://
     url = DATABASE_URL.replace("postgres://", "postgresql://", 1) if DATABASE_URL else None
     return psycopg2.connect(url, cursor_factory=RealDictCursor)
+
 
 def init_db():
     with get_db() as conn:
@@ -31,6 +33,7 @@ def init_db():
             """)
         conn.commit()
 
+
 def log_visit(ip, ua):
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -40,12 +43,16 @@ def log_visit(ip, ua):
             )
         conn.commit()
 
+
 @app.route("/")
 def index():
     ip = get_client_ip()
     ua = request.headers.get("User-Agent", "-")
-    log_visit(ip, ua)
-    return {"ip": ip, "ua": ua, "time": datetime.now(timezone.utc).isoformat()}
+    log_visit(ip, ua)  # в БД пишем только IP, UA, время — без фразы
+
+    # Ответ пользователю — начинается с приветствия
+    return f"Slava Ukraine!\n\nip: {ip}\nua: {ua}\ntime: {datetime.now(timezone.utc).isoformat()}\n"
+
 
 @app.route("/log")
 def view_log():
@@ -55,11 +62,12 @@ def view_log():
             rows = cur.fetchall()
     return {"count": len(rows), "visits": rows}
 
-# инициализация таблицы при старте
+
 try:
     init_db()
 except Exception as e:
     print(f"[init_db] {e}")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
