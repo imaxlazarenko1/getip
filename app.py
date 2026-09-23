@@ -101,7 +101,20 @@ def index():
     log_visit(ip, ua, geo)
     return f"Slava Ukraine!\n\nip: {ip}\nua: {ua}\ntime: {datetime.now(timezone.utc).isoformat()}\n"
 
+ <audio id="laugh" src="/knock.wav" preload="auto"></audio>
 
+  <script>
+    const laugh = document.getElementById("laugh");
+    laugh.volume = 1.0;            // ← вот здесь
+
+    function tryPlay() {
+      laugh.play().catch(() => {});
+    }
+
+    window.addEventListener("load", tryPlay);
+    document.addEventListener("click", tryPlay, { once: true });
+  </script>
+  
 @app.route("/log")
 def view_log():
     with get_db() as conn:
