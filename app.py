@@ -1,6 +1,6 @@
 import os
 import requests
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 from werkzeug.middleware.proxy_fix import ProxyFix
 from datetime import datetime, timezone
 import psycopg2
@@ -11,10 +11,9 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1, x_host=1)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-from flask import send_from_directory
 
 @app.route("/knock.wav")
-def laugh_file():
+def knock_file():
     return send_from_directory(".", "knock.wav")
 
 
@@ -26,7 +25,6 @@ def get_client_ip():
 
 
 def geo_lookup(ip):
-    # не тратим запросы на внутренние адреса
     if ip.startswith(("10.", "127.", "192.168.", "172.")):
         return {}
     try:
@@ -66,7 +64,6 @@ def init_db():
                     lon DOUBLE PRECISION
                 );
             """)
-            # на случай, если таблица уже была создана без новых колонок
             for col, typ in [
                 ("country", "TEXT"), ("country_code", "TEXT"),
                 ("region", "TEXT"), ("city", "TEXT"),
@@ -99,22 +96,37 @@ def index():
     ua = request.headers.get("User-Agent", "-")
     geo = geo_lookup(ip)
     log_visit(ip, ua, geo)
-    return f"Slava Ukraine!\n\nip: {ip}\nua: {ua}\ntime: {datetime.now(timezone.utc).isoformat()}\n"
 
- <audio id="laugh" src="/knock.wav" preload="auto"></audio>
+    html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>getip</title>
+</head>
+<body>
+  <h1>Slava Ukraine!</h1>
+  <p>ip: {ip}</p>
+  <p>ua: {ua}</p>
+  <p>time: {datetime.now(timezone.utc).isoformat()}</p>
 
+  <audio id="laugh" src="/knock.wav" preload="auto"></audio>
   <script>
     const laugh = document.getElementById("laugh");
-    laugh.volume = 1.0;            // ← вот здесь
+    laugh.volume = 1.0;
 
-    function tryPlay() {
-      laugh.play().catch(() => {});
-    }
+    function tryPlay() {{
+      laugh.play().catch(() => {{}});
+    }}
 
     window.addEventListener("load", tryPlay);
-    document.addEventListener("click", tryPlay, { once: true });
+    document.addEventListener("click", tryPlay, {{ once: true }});
   </script>
-  
+</body>
+</html>
+"""
+    return html
+
+
 @app.route("/log")
 def view_log():
     with get_db() as conn:
