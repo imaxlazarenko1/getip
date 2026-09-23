@@ -1,4 +1,5 @@
 import os
+import requests
 from flask import Flask, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 from datetime import datetime, timezone
@@ -6,13 +7,34 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1, x_host=1)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
 def get_client_ip():
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
     return request.remote_addr or "unknown"
+
+
+def geo_lookup(ip):
+    # не тратим запросы на внутренние адреса
+    if ip.startswith(("10.", "127.", "192.168.", "172.")):
+        return {}
+    try:
+        r = requests.get(
+            f"http://ip-api.com/json/{ip}",
+            params={"fields": "status,country,countryCode,regionName,city,isp,lat,lon"},
+            timeout=5,
+        )
+        d = r.json()
+        if d.get("status") == "success":
+            return d
+    except Exception:
+        pass
+    return {}
 
 
 def get_db():
@@ -28,18 +50,39 @@ def init_db():
                     id SERIAL PRIMARY KEY,
                     ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     ip TEXT NOT NULL,
-                    user_agent TEXT
+                    user_agent TEXT,
+                    country TEXT,
+                    country_code TEXT,
+                    region TEXT,
+                    city TEXT,
+                    isp TEXT,
+                    lat DOUBLE PRECISION,
+                    lon DOUBLE PRECISION
                 );
             """)
+            # на случай, если таблица уже была создана без новых колонок
+            for col, typ in [
+                ("country", "TEXT"), ("country_code", "TEXT"),
+                ("region", "TEXT"), ("city", "TEXT"),
+                ("isp", "TEXT"), ("lat", "DOUBLE PRECISION"), ("lon", "DOUBLE PRECISION"),
+            ]:
+                cur.execute(f"ALTER TABLE visits ADD COLUMN IF NOT EXISTS {col} {typ};")
         conn.commit()
 
 
-def log_visit(ip, ua):
+def log_visit(ip, ua, geo):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO visits (ts, ip, user_agent) VALUES (%s, %s, %s);",
-                (datetime.now(timezone.utc), ip, ua)
+                """INSERT INTO visits
+                   (ts, ip, user_agent, country, country_code, region, city, isp, lat, lon)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);""",
+                (
+                    datetime.now(timezone.utc), ip, ua,
+                    geo.get("country"), geo.get("countryCode"),
+                    geo.get("regionName"), geo.get("city"),
+                    geo.get("isp"), geo.get("lat"), geo.get("lon"),
+                )
             )
         conn.commit()
 
@@ -48,9 +91,8 @@ def log_visit(ip, ua):
 def index():
     ip = get_client_ip()
     ua = request.headers.get("User-Agent", "-")
-    log_visit(ip, ua)  # в БД пишем только IP, UA, время — без фразы
-
-    # Ответ пользователю — начинается с приветствия
+    geo = geo_lookup(ip)
+    log_visit(ip, ua, geo)
     return f"Slava Ukraine!\n\nip: {ip}\nua: {ua}\ntime: {datetime.now(timezone.utc).isoformat()}\n"
 
 
@@ -58,7 +100,7 @@ def index():
 def view_log():
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT ts, ip, user_agent FROM visits ORDER BY ts DESC LIMIT 100;")
+            cur.execute("SELECT * FROM visits ORDER BY ts DESC LIMIT 100;")
             rows = cur.fetchall()
     return {"count": len(rows), "visits": rows}
 
