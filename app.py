@@ -14,7 +14,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 @app.route("/knock.wav")
 def knock_file():
-    return send_from_directory(".", "knock.wav")
+    return send_from_directory(".", "knock.wav", mimetype="audio/wav")
 
 
 def get_client_ip():
@@ -114,12 +114,18 @@ def index():
     const laugh = document.getElementById("laugh");
     laugh.volume = 1.0;
 
+    laugh.addEventListener("error", () => {{
+      console.error("audio error:", laugh.error);
+    }});
+
     function tryPlay() {{
-      laugh.play().catch(() => {{}});
+      laugh.play()
+        .then(() => console.log("audio played"))
+        .catch(e => console.warn("autoplay blocked:", e.name, e.message));
     }}
 
-    window.addEventListener("load", tryPlay);
     document.addEventListener("click", tryPlay, {{ once: true }});
+    window.addEventListener("load", tryPlay);
   </script>
 </body>
 </html>
